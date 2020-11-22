@@ -1,0 +1,10 @@
+package Minecraft2D
+
+modules = Minecraft.Client.Main
+
+depends = contrib, base
+
+sourcedir = "src"
+outputdir = "target"
+executable = "Minecraft"
+main = Minecraft.Client.Main

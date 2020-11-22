@@ -1,0 +1,82 @@
+module Minecraft.Core.Univ.Level
+
+import Data.SortedMap
+
+import public Minecraft.Data.Type.As
+import public Minecraft.Core.Block.Export
+
+%default total
+
+blkEq : Block a -> Eq a
+blkEq = %search
+
+blkOrd : Block a -> Ord a
+blkOrd = %search
+
+public export
+Eq (As Block) where
+  x == y = if Block.id @{x.ctx.impl} == Block.id @{y.ctx.impl}
+    then (==) @{blkEq x.ctx.impl} x.val (believe_me y.val)
+    else False
+
+public export
+Ord (As Block) where
+  compare x y =
+    case compare (Block.id @{x.ctx.impl}) (Block.id @{y.ctx.impl}) of
+      EQ => compare @{blkOrd x.ctx.impl} x.val (believe_me y.val)
+      other => other
+
+%foreign "C:level_dat,level"
+level_dat : (level_id : String)
+         -> (x : Bits16)
+         -> (y : Bits16)
+         -> (z : Bits16)
+         -> Bits16 -- val
+%foreign "C:put_level_dat,level"
+put_level_dat : (level_id : String)
+             -> (x : Bits16)
+             -> (y : Bits16)
+             -> (z : Bits16)
+             -> (new_val : Bits16)
+             -> Bits16 -- orig_val
+%foreign "C:neg_u16,level"
+neg_u16 : Bits16 -> Bits16
+
+public export
+record Pos where
+  x, y, z : Bits16
+
+export
+record Level where
+  constructor MkLevel
+  levelId : String
+  void : As Block
+  top : Bits16
+  free : List Bits16
+  blockTree : SortedMap Bits16 (As Block)
+
+export
+level : (levelId : String) -> (void : As Block) -> Level
+level levelId void = MkLevel levelId void 0 [] (insert 0 void empty)
+
+export
+blockAt : Level -> Pos -> (As Block)
+blockAt lvl pos = case lookup (level_dat lvl.levelId pos.x pos.y pos.z) lvl.blockTree of
+  Just blk => blk
+  Nothing  => lvl.void
+
+covering
+blockExists : As Block -> Level -> Maybe Bits16
+blockExists blk lvl = blockExists' lvl.top where
+  blockExists' : Bits16 -> Maybe Bits16
+  blockExists' 0 = case lookup 0 lvl.blockTree of
+    Just _  => Just 0
+    Nothing => Nothing
+  blockExists' n = case lookup n lvl.blockTree of
+    Just _  => Just n
+    Nothing => blockExists' (neg_u16 n)
+
+export partial
+putBlock : Level -> Pos -> As Block -> Bits16
+putBlock lvl pos blk = case blockExists blk lvl of
+  Just x => put_level_dat lvl.levelId pos.x pos.y pos.z x
